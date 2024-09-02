@@ -1,0 +1,6 @@
+jdk:
+  - openjdk17
+env:
+  GROUP: net.clydo.jedis
+  ARTIFACT: JedisMessaging
+  VERSION: 1.0.0

@@ -1,0 +1,47 @@
+plugins {
+    id 'java'
+    id 'maven-publish'
+}
+
+group = 'net.clydo.jedis'
+version = '1.0'
+
+sourceCompatibility = targetCompatibility = JavaVersion.VERSION_17
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    compileOnly 'org.projectlombok:lombok:1.18.34'
+    annotationProcessor 'org.projectlombok:lombok:1.18.34'
+
+    implementation 'org.jetbrains:annotations:24.0.0'
+
+    implementation 'org.slf4j:slf4j-api:2.0.16'
+//    implementation 'org.apache.logging.log4j:log4j-api:2.20.0'
+//    implementation 'org.apache.logging.log4j:log4j-core:2.20.0'
+//    implementation 'org.apache.logging.log4j:log4j-slf4j2-impl:2.20.0'
+
+    implementation 'com.google.guava:guava:33.3.0-jre'
+
+    implementation 'redis.clients:jedis:5.1.5'
+}
+
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+        }
+    }
+}
+
+wrapper {
+    gradleVersion = "8.8"
+    distributionType = Wrapper.DistributionType.ALL
+}
