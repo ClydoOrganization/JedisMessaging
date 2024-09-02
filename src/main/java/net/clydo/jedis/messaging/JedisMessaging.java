@@ -23,11 +23,12 @@ package net.clydo.jedis.messaging;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import lombok.Getter;
+import lombok.Setter;
 import lombok.val;
 import net.clydo.jedis.messaging.annotations.JedisListener;
 import net.clydo.jedis.messaging.callback.CallbacksHandler;
-import net.clydo.jedis.messaging.callback.SendCallback;
 import net.clydo.jedis.messaging.callback.ReceiveCallback;
+import net.clydo.jedis.messaging.callback.SendCallback;
 import net.clydo.jedis.messaging.listener.Listener;
 import net.clydo.jedis.messaging.listener.ListenerHandler;
 import net.clydo.jedis.messaging.messenger.impl.JedisMessenger;
@@ -53,6 +54,9 @@ public class JedisMessaging implements Closeable {
     @Getter
     private final String signature;
     private final JedisPool jedisPool;
+    @Setter
+    @Getter
+    private String defaultPublishChannel;
     //private final Queue<Pair<String, Packet<JsonElement>>> packetQueue;
     //private final int maxPacketQueue;
 
@@ -101,6 +105,22 @@ public class JedisMessaging implements Closeable {
         });
     }
 
+    public void publish(final String channel, final String event, final Object message, final boolean skipSelf) {
+        this.publish(channel, event, message, null, skipSelf);
+    }
+
+    public void publish(final String event, final Object message, final ReceiveCallback receiveCallback, final boolean skipSelf) {
+        if (this.defaultPublishChannel == null) {
+            throw new IllegalStateException("No default channel specified, use setDefaultPublishChannel");
+        }
+
+        this.publish(this.defaultPublishChannel, event, message, receiveCallback, skipSelf);
+    }
+
+    public void publish(final String event, final Object message, final boolean skipSelf) {
+        this.publish(event, message, null, skipSelf);
+    }
+
     private String putCallback(final String channel, final ReceiveCallback receiveCallback) {
         val callbackId = UUID.randomUUID().toString();
 
@@ -119,7 +139,6 @@ public class JedisMessaging implements Closeable {
     }
 
     public SendCallback callback(final String channel, final String callbackId, final String signature, final boolean skipSelf) {
-        System.out.println("--------------------------- + " + channel);
         val sent = new boolean[]{false};
         return (data) -> MultiThreading.execute(() -> {
             if (!sent[0]) {
@@ -149,21 +168,15 @@ public class JedisMessaging implements Closeable {
 
     private long publishPacket(final String channel, final Packet<JsonElement> packet) {
         val json = this.gson.toJson(packet);
-        val receivedCount = this.messenger.publish(channel, json) - 1;
 
-        System.out.println(receivedCount + " client(s) received your data");
-        return receivedCount;
+        return this.messenger.publish(channel, json) - 1;
 
         //if (receivedCount == 0 && this.packetQueue != null && this.packetQueue.size() < this.maxPacketQueue) {
         //    this.packetQueue.add(Pair.of(channel, packet));
         //}
     }
 
-    public void publish(final String channel, final String event, final Object message, final boolean skipSelf) {
-        this.publish(channel, event, message, null, skipSelf);
-    }
-
-    private void subscribe(final @NotNull Listener listener) {
+    public void subscribe(final @NotNull Listener listener) {
         val jedisListener = ReflectionUtil.validateAnnotation(listener.getClass(), JedisListener.class);
 
         val pattern = jedisListener.pattern();
@@ -171,13 +184,13 @@ public class JedisMessaging implements Closeable {
         val channels = jedisListener.channels();
 
         if (pattern) {
-            this.subscribePattern(listener, event, channels);
+            this._subscribePattern(listener, event, channels);
         } else {
-            this.subscribe(listener, event, channels);
+            this._subscribeChannel(listener, event, channels);
         }
     }
 
-    private void subscribe(final Listener listener, @Nullable final String event, final String... channels) {
+    private void _subscribeChannel(final Listener listener, @Nullable final String event, final String... channels) {
         if (channels == null) {
             throw new IllegalStateException("Cannot subscribe without a channel");
         }
@@ -198,7 +211,7 @@ public class JedisMessaging implements Closeable {
         }
     }
 
-    private void subscribePattern(final Listener listener, @Nullable final String event, final String... patterns) {
+    private void _subscribePattern(final Listener listener, @Nullable final String event, final String... patterns) {
         if (patterns == null) {
             throw new IllegalStateException("Cannot subscribe without a pattern");
         }

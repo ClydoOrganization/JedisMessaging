@@ -43,16 +43,6 @@ public class ListenerHandler extends JedisPubSub {
     }
 
     @Override
-    public void onPSubscribe(String pattern, int subscribedChannels) {
-        System.out.println("pattern:  " + pattern + "=" + subscribedChannels);
-    }
-
-    @Override
-    public void onSubscribe(String channel, int subscribedChannels) {
-        System.out.println("channel:  " + channel + "=" + subscribedChannels);
-    }
-
-    @Override
     public void onPMessage(String pattern, String channel, String message) {
         this.onPacket(channel, message);
     }
