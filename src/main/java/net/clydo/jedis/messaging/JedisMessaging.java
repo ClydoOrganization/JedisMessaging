@@ -25,65 +25,85 @@ import com.google.gson.JsonElement;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.val;
-import net.clydo.jedis.messaging.annotations.JedisListener;
+import net.clydo.jedis.messaging.annotations.JedisChannels;
+import net.clydo.jedis.messaging.annotations.JedisEvent;
 import net.clydo.jedis.messaging.callback.CallbacksHandler;
 import net.clydo.jedis.messaging.callback.ReceiveCallback;
 import net.clydo.jedis.messaging.callback.SendCallback;
+import net.clydo.jedis.messaging.listener.InvokableListener;
 import net.clydo.jedis.messaging.listener.Listener;
 import net.clydo.jedis.messaging.listener.ListenerHandler;
 import net.clydo.jedis.messaging.messenger.impl.JedisMessenger;
 import net.clydo.jedis.messaging.packet.Packet;
 import net.clydo.jedis.messaging.packet.PacketType;
-import net.clydo.jedis.messaging.util.MultiThreading;
+import net.clydo.jedis.messaging.util.Multithreading;
 import net.clydo.jedis.messaging.util.ReflectionUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import redis.clients.jedis.JedisPool;
 
 import java.io.Closeable;
+import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
+/**
+ * JedisMessaging is a messaging system built on top of Redis, utilizing Jedis.
+ * It provides mechanisms to publish and subscribe to messages, handle callbacks,
+ * and manage listeners for specific events or patterns.
+ */
 public class JedisMessaging implements Closeable {
+    private static final Logger LOGGER = Logger.getLogger(JedisMessaging.class.getName());
+
+    private final Gson gson;
+    private final JedisPool jedisPool;
     private final JedisMessenger messenger;
     private final Map<String, ListenerHandler> listenerHandlers;
     private final Map<String, CallbacksHandler> callbacksHandlers;
-    private final Gson gson;
     @Getter
-    private final String signature;
-    private final JedisPool jedisPool;
+    private final String signature; // Unique identifier for this instance of JedisMessaging.
+    @Getter
+    private final long callbacksExpiresIn;
     @Setter
-    @Getter
     private String defaultPublishChannel;
-    //private final Queue<Pair<String, Packet<JsonElement>>> packetQueue;
-    //private final int maxPacketQueue;
 
+    /**
+     * Constructor that initializes the JedisMessaging instance with a JedisPool and Gson.
+     *
+     * @param jedisPool the Redis connection pool
+     * @param gson      the Gson instance for JSON serialization/deserialization
+     */
     public JedisMessaging(final JedisPool jedisPool, final Gson gson) {
-        this(20, jedisPool, gson);
+        this(jedisPool, gson, 20);
     }
 
-    public JedisMessaging(/*int maxPacketCache, */ final long callbacksExpiresIn, final JedisPool jedisPool, final Gson gson) {
-        //this.maxPacketQueue = maxPacketCache;
+    /**
+     * Constructor that initializes the JedisMessaging instance with specified callback expiration time,
+     * JedisPool, and Gson.
+     *
+     * @param jedisPool          the Redis connection pool
+     * @param gson               the Gson instance for JSON serialization/deserialization
+     * @param callbacksExpiresIn time in seconds after which callbacks expire
+     */
+    public JedisMessaging(final JedisPool jedisPool, final Gson gson, final long callbacksExpiresIn) {
+        this.callbacksExpiresIn = callbacksExpiresIn;
         this.jedisPool = jedisPool;
+        this.gson = gson;
+        this.messenger = new JedisMessenger(jedisPool);
         this.listenerHandlers = new ConcurrentHashMap<>();
         this.callbacksHandlers = new ConcurrentHashMap<>();
-        //if (this.maxPacketQueue <= 0) {
-        //    this.packetQueue = new LinkedList<>();
-        //} else {
-        //    this.packetQueue = null;
-        //}
-        this.messenger = new JedisMessenger(jedisPool);
         this.signature = UUID.randomUUID().toString();
-        this.gson = gson;
 
-        MultiThreading.scheduleAtFixedRate(() -> {
+        Multithreading.scheduleAtFixedRate(() -> {
             for (var iterator = this.callbacksHandlers.entrySet().iterator(); iterator.hasNext(); ) {
                 val entry = iterator.next();
                 val value = entry.getValue();
 
-                value.cleanup(callbacksExpiresIn);
+                value.cleanup();
 
                 if (value.isEmpty()) {
                     iterator.remove();
@@ -92,23 +112,48 @@ public class JedisMessaging implements Closeable {
         }, callbacksExpiresIn, callbacksExpiresIn, TimeUnit.SECONDS);
     }
 
+    /**
+     * Publishes a message to a specified channel with an optional callback and the option to skip the sender.
+     *
+     * @param channel         the channel to publish the message to
+     * @param event           the event type of the message
+     * @param message         the message to be published
+     * @param receiveCallback the callback to handle the response (can be null)
+     * @param skipSelf        whether to skip receiving the message on the same instance
+     */
     public void publish(final String channel, final String event, final Object message, final ReceiveCallback receiveCallback, final boolean skipSelf) {
-        MultiThreading.execute(() -> {
+        Multithreading.execute(() -> {
             String callbackId = null;
             if (receiveCallback != null) {
                 callbackId = this.putCallback(channel, receiveCallback);
             }
 
-            val packet = new Packet<>(skipSelf ? this.signature : null, PacketType.EVENT, event, this.gson.toJsonTree(message), callbackId);
+            val packet = new Packet<>(this.signature, PacketType.EVENT, event, this.gson.toJsonTree(message), callbackId, skipSelf);
 
-            this.publishPacket(channel, packet);
+            this._publishPacket(channel, packet);
         });
     }
 
+    /**
+     * Publishes a message to a specified channel without a callback.
+     *
+     * @param channel  the channel to publish the message to
+     * @param event    the event type of the message
+     * @param message  the message to be published
+     * @param skipSelf whether to skip receiving the message on the same instance
+     */
     public void publish(final String channel, final String event, final Object message, final boolean skipSelf) {
         this.publish(channel, event, message, null, skipSelf);
     }
 
+    /**
+     * Publishes a message to the default channel with an optional callback and the option to skip the sender.
+     *
+     * @param event           the event type of the message
+     * @param message         the message to be published
+     * @param receiveCallback the callback to handle the response (can be null)
+     * @param skipSelf        whether to skip receiving the message on the same instance
+     */
     public void publish(final String event, final Object message, final ReceiveCallback receiveCallback, final boolean skipSelf) {
         if (this.defaultPublishChannel == null) {
             throw new IllegalStateException("No default channel specified, use setDefaultPublishChannel");
@@ -117,10 +162,24 @@ public class JedisMessaging implements Closeable {
         this.publish(this.defaultPublishChannel, event, message, receiveCallback, skipSelf);
     }
 
+    /**
+     * Publishes a message to the default channel without a callback.
+     *
+     * @param event    the event type of the message
+     * @param message  the message to be published
+     * @param skipSelf whether to skip receiving the message on the same instance
+     */
     public void publish(final String event, final Object message, final boolean skipSelf) {
         this.publish(event, message, null, skipSelf);
     }
 
+    /**
+     * Registers a callback for a specific channel.
+     *
+     * @param channel         the channel where the callback is registered
+     * @param receiveCallback the callback to handle the response
+     * @return the callback ID
+     */
     private String putCallback(final String channel, final ReceiveCallback receiveCallback) {
         val callbackId = UUID.randomUUID().toString();
 
@@ -130,7 +189,7 @@ public class JedisMessaging implements Closeable {
             this.callbacksHandlers.put(channel, handler);
 
             val finalHandler = handler;
-            MultiThreading.execute(() -> this.messenger.subscribePattern(finalHandler, channel));
+            Multithreading.execute(() -> this.messenger.subscribePattern(finalHandler, channel));
         }
 
         handler.register(callbackId, receiveCallback);
@@ -138,50 +197,31 @@ public class JedisMessaging implements Closeable {
         return callbackId;
     }
 
-    public SendCallback callback(final String channel, final String callbackId, final String signature, final boolean skipSelf) {
-        val sent = new boolean[]{false};
-        return (data) -> MultiThreading.execute(() -> {
-            if (!sent[0]) {
-                sent[0] = true;
-
-                val packet = new Packet<>(skipSelf ? signature : null, PacketType.CALLBACK, channel, data, callbackId);
-
-                this.publishPacket(channel, packet);
-            }
-        });
-    }
-
-    //public void publishQueue() {
-    //    if (this.packetQueue == null) {
-    //        return;
-    //    }
-    //
-    //    synchronized (this.packetQueue) {
-    //        Pair<String, Packet<JsonElement>> pair;
-    //        while ((pair = this.packetQueue.poll()) != null) {
-    //            this.publishPacket(pair.left(), pair.right());
-    //        }
-    //
-    //        this.packetQueue.clear();
-    //    }
-    //}
-
-    private long publishPacket(final String channel, final Packet<JsonElement> packet) {
+    /**
+     * Publishes a packet to a specific channel.
+     *
+     * @param channel the channel to publish the packet to
+     * @param packet  the packet to be published
+     * @return the number of clients that received the message, minus the sender
+     */
+    public long _publishPacket(final String channel, final Packet<JsonElement> packet) {
         val json = this.gson.toJson(packet);
-
         return this.messenger.publish(channel, json) - 1;
-
-        //if (receivedCount == 0 && this.packetQueue != null && this.packetQueue.size() < this.maxPacketQueue) {
-        //    this.packetQueue.add(Pair.of(channel, packet));
-        //}
     }
 
+    /**
+     * Subscribes a listener to events or patterns as defined by the JedisListener annotation.
+     *
+     * @param listener the listeners to subscribe
+     */
     public void subscribe(final @NotNull Listener listener) {
-        val jedisListener = ReflectionUtil.validateAnnotation(listener.getClass(), JedisListener.class);
+        val clazz = listener.getClass();
+        val jedisChannels = ReflectionUtil.validateAnnotation(clazz, JedisChannels.class);
+        val jedisEvent = ReflectionUtil.validateAnnotation(clazz, JedisEvent.class);
 
-        val pattern = jedisListener.pattern();
-        val event = jedisListener.event();
-        val channels = jedisListener.channels();
+        val pattern = jedisChannels.pattern();
+        val event = jedisEvent.value();
+        val channels = jedisChannels.value();
 
         if (pattern) {
             this._subscribePattern(listener, event, channels);
@@ -190,6 +230,58 @@ public class JedisMessaging implements Closeable {
         }
     }
 
+    /**
+     * Subscribes a listener to events or patterns as defined by the JedisListener annotation.
+     *
+     * @param listeners the listeners to subscribe
+     */
+    public <L> void subscribeFrom(final @NotNull L listeners) {
+        val clazz = listeners.getClass();
+
+        var jedisChannels = ReflectionUtil.getAnnotation(clazz, JedisChannels.class, true);
+
+        for (Method method : clazz.getDeclaredMethods()) {
+            val methodClass = method.getClass();
+
+            val annotation = ReflectionUtil.getAnnotation(methodClass, JedisChannels.class, true);
+            if (annotation != null) {
+                jedisChannels = annotation;
+            }
+
+            val jedisEvent = ReflectionUtil.getAnnotation(methodClass, JedisEvent.class, true);
+
+            if (jedisChannels != null && jedisEvent != null) {
+                try {
+                    val expectedTypes = new Class<?>[]{String.class, JsonElement.class, SendCallback.class};
+
+                    ReflectionUtil.validateMethodParameters(method, expectedTypes);
+                } catch (IllegalArgumentException e) {
+                    LOGGER.log(Level.WARNING, "", e);
+                    continue; // Skip this method and move to the next one
+                }
+
+                val pattern = jedisChannels.pattern();
+                val event = jedisEvent.value();
+                val channels = jedisChannels.value();
+
+                method.setAccessible(true);
+                val listener = new InvokableListener(method, listeners);
+                if (pattern) {
+                    this._subscribePattern(listener, event, channels);
+                } else {
+                    this._subscribeChannel(listener, event, channels);
+                }
+            }
+        }
+    }
+
+    /**
+     * Subscribes a listener to specific channels.
+     *
+     * @param listener the listener to subscribe
+     * @param event    the event type to listen for (can be null)
+     * @param channels the channels to subscribe to
+     */
     private void _subscribeChannel(final Listener listener, @Nullable final String event, final String... channels) {
         if (channels == null) {
             throw new IllegalStateException("Cannot subscribe without a channel");
@@ -202,7 +294,7 @@ public class JedisMessaging implements Closeable {
                 this.listenerHandlers.put(channel, handler);
 
                 val finalHandler = handler;
-                MultiThreading.execute(() -> this.messenger.subscribe(finalHandler, channel));
+                Multithreading.execute(() -> this.messenger.subscribe(finalHandler, channel));
             }
 
             if (event != null) {
@@ -211,6 +303,13 @@ public class JedisMessaging implements Closeable {
         }
     }
 
+    /**
+     * Subscribes a listener to patterns.
+     *
+     * @param listener the listener to subscribe
+     * @param event    the event type to listen for (can be null)
+     * @param patterns the patterns to subscribe to
+     */
     private void _subscribePattern(final Listener listener, @Nullable final String event, final String... patterns) {
         if (patterns == null) {
             throw new IllegalStateException("Cannot subscribe without a pattern");
@@ -223,7 +322,7 @@ public class JedisMessaging implements Closeable {
                 this.listenerHandlers.put(pattern, handler);
 
                 val finalHandler = handler;
-                MultiThreading.execute(() -> this.messenger.subscribePattern(finalHandler, pattern));
+                Multithreading.execute(() -> this.messenger.subscribePattern(finalHandler, pattern));
             }
 
             if (event != null) {
@@ -232,9 +331,12 @@ public class JedisMessaging implements Closeable {
         }
     }
 
+    /**
+     * Closes the JedisMessaging instance, shutting down executors and closing the Jedis pool.
+     */
     @Override
     public void close() {
-        MultiThreading.shutdownExecutors();
+        Multithreading.shutdownExecutors();
 
         this.jedisPool.close();
     }

@@ -30,8 +30,8 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 @UtilityClass
-public class MultiThreading {
-    private static final Logger LOGGER = Logger.getLogger(MultiThreading.class.getName());
+public class Multithreading {
+    private static final Logger LOGGER = Logger.getLogger(Multithreading.class.getName());
     private static final ThreadFactory THREAD_FACTORY = new ThreadFactoryBuilder().setNameFormat("JedisMessaging").build();
     @Getter
     private final ExecutorService POOL = Executors.newCachedThreadPool(THREAD_FACTORY);

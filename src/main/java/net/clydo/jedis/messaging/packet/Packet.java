@@ -27,15 +27,16 @@ public record Packet<D>(
         int type,
         String event,
         D data,
-        String callbackId
+        String callbackId,
+        boolean skipSelf
 ) {
     public static final PacketJsonTypeToken PACKET_JSON_TYPE_TOKEN = new PacketJsonTypeToken();
 
-    public Packet(final String signature, final @NotNull PacketType type, final String event, final D data, final String callbackId) {
-        this(signature, type.getId(), event, data, callbackId);
+    public Packet(final String signature, final @NotNull PacketType type, final String event, final D data, final String callbackId, final boolean skipSelf) {
+        this(signature, type.getId(), event, data, callbackId, skipSelf);
     }
 
-    public Packet(final String signature, final @NotNull PacketType type, final D data, final String callbackId) {
-        this(signature, type.getId(), null, data, callbackId);
+    public Packet(final String signature, final @NotNull PacketType type, final D data, final String callbackId, final boolean skipSelf) {
+        this(signature, type.getId(), null, data, callbackId, skipSelf);
     }
 }

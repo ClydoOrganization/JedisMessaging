@@ -22,9 +22,12 @@ package net.clydo.jedis.messaging.util;
 
 import lombok.experimental.UtilityClass;
 import lombok.val;
+import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
+
 import java.lang.annotation.Annotation;
 import java.lang.reflect.AnnotatedElement;
+import java.lang.reflect.Method;
 
 @UtilityClass
 public class ReflectionUtil {
@@ -36,9 +39,14 @@ public class ReflectionUtil {
     public <T extends Annotation> T validateAnnotation(@NotNull AnnotatedElement element, Class<T> annotationClass, boolean inRoot) {
         val annotation = ReflectionUtil.getAnnotation(element, annotationClass, inRoot);
         if (annotation == null) {
-            throw new IllegalStateException(element + " is not annotated with @" + annotationClass.getSimpleName());
+            throwNotAnnotated(element, annotationClass);
         }
         return annotation;
+    }
+
+    @Contract("_, _ -> fail")
+    public <T extends Annotation> void throwNotAnnotated(@NotNull AnnotatedElement element, @NotNull Class<T> annotationClass) {
+        throw new IllegalStateException(element + " is not annotated with @" + annotationClass.getSimpleName());
     }
 
     public <T extends Annotation> T getAnnotation(@NotNull AnnotatedElement element, Class<T> annotationClass, boolean inRoot) {
@@ -55,5 +63,47 @@ public class ReflectionUtil {
             }
         }
         return null;
+    }
+
+    public void validateMethodParameters(@NotNull Method method, Class<?> @NotNull [] expectedTypes) {
+        val parameterTypes = method.getParameterTypes();
+
+        if (parameterTypes.length != expectedTypes.length) {
+            throw new IllegalArgumentException(
+                    String.format(
+                            "Method %s in class %s must have exactly %d parameters: %s, but found %d parameters.",
+                            method.getName(),
+                            method.getDeclaringClass().getName(),
+                            expectedTypes.length,
+                            formatExpectedParameters(expectedTypes),
+                            parameterTypes.length)
+            );
+        }
+
+        for (int i = 0; i < parameterTypes.length; i++) {
+            if (!parameterTypes[i].equals(expectedTypes[i])) {
+                throw new IllegalArgumentException(
+                        String.format(
+                                "Method %s in class %s must have parameter %d of type %s, but found %s.",
+                                method.getName(),
+                                method.getDeclaringClass().getName(),
+                                i + 1,
+                                expectedTypes[i].getSimpleName(),
+                                parameterTypes[i].getSimpleName()
+                        )
+                );
+            }
+        }
+    }
+
+    private @NotNull String formatExpectedParameters(Class<?> @NotNull [] types) {
+        val sb = new StringBuilder();
+        for (int i = 0; i < types.length; i++) {
+            sb.append(types[i].getSimpleName());
+            if (i < types.length - 1) {
+                sb.append(", ");
+            }
+        }
+        return sb.toString();
     }
 }

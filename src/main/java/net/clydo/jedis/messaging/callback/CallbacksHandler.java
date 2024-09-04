@@ -27,10 +27,10 @@ import net.clydo.jedis.messaging.JedisMessaging;
 import net.clydo.jedis.messaging.packet.Packet;
 import net.clydo.jedis.messaging.packet.PacketType;
 import net.clydo.jedis.messaging.util.Pair;
+import org.jetbrains.annotations.NotNull;
 import redis.clients.jedis.JedisPubSub;
 
-import java.time.ZoneOffset;
-import java.time.ZonedDateTime;
+import java.time.Instant;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -39,7 +39,7 @@ import java.util.concurrent.ConcurrentMap;
 public class CallbacksHandler extends JedisPubSub {
     private final Gson gson;
     private final JedisMessaging messaging;
-    private final ConcurrentMap<String, ConcurrentLinkedQueue<Pair<Long, ReceiveCallback>>> callbacks;
+    private final ConcurrentMap<String, ConcurrentLinkedQueue<Pair<Instant, ReceiveCallback>>> callbacks;
 
     public CallbacksHandler(JedisMessaging messaging, Gson gson) {
         this.messaging = messaging;
@@ -60,69 +60,52 @@ public class CallbacksHandler extends JedisPubSub {
     private void onPacket(String channel, String message) {
         val packet = this.gson.fromJson(message, Packet.PACKET_JSON_TYPE_TOKEN);
 
-        val packetType = PacketType.ofId(packet.type());
-        val signature = packet.signature();
-        if (signature != null && Objects.equals(signature, this.messaging.getSignature())) {
+        if (this.shouldSkipProcessing(packet)) {
             return;
         }
 
-        val callbackId = packet.callbackId();
-        val packetData = packet.data();
-
-        if (packetType == PacketType.CALLBACK) {
+        if (packet.type() == PacketType.CALLBACK.getId()) {
+            val callbackId = packet.callbackId();
             if (callbackId != null) {
-                this.onCallback(callbackId, channel, packetData);
+                this.processCallback(callbackId, channel, packet.data());
             }
         }
     }
 
-    public void onCallback(final String callbackId, final String channel, final JsonElement data) {
-        val callbacks = this.callbacks.get(callbackId);
-        if (callbacks != null) {
-            val iterator = callbacks.iterator();
+    private boolean shouldSkipProcessing(@NotNull Packet<JsonElement> packet) {
+        return packet.skipSelf() && Objects.equals(packet.signature(), this.messaging.getSignature());
+    }
 
-            //noinspection WhileLoopReplaceableByForEach
-            while (iterator.hasNext()) {
-                val callback = iterator.next().right();
-                callback.call(channel, data);
-            }
+    public void processCallback(final String callbackId, final String channel, final JsonElement data) {
+        val callbacksQueue = this.callbacks.get(callbackId);
+        if (callbacksQueue != null) {
+            callbacksQueue.forEach(pair -> {
+                if (this.expired(pair)) {
+                    return;
+                }
+                pair.right().call(channel, data);
+            });
         }
     }
 
     public void register(String callbackId, ReceiveCallback receiveCallback) {
-        var callbacks = this.callbacks.get(callbackId);
-        if (callbacks == null) {
-            callbacks = new ConcurrentLinkedQueue<>();
-            val tempListeners = this.callbacks.putIfAbsent(callbackId, callbacks);
-            if (tempListeners != null) {
-                callbacks = tempListeners;
-            }
-        }
-
-        callbacks.add(Pair.of(nowEpochSecond(), receiveCallback));
+        this.callbacks
+                .computeIfAbsent(callbackId, k -> new ConcurrentLinkedQueue<>())
+                .add(Pair.of(Instant.now().plusSeconds(this.messaging.getCallbacksExpiresIn()), receiveCallback));
     }
 
-    public void cleanup(long expiresIn) {
-        for (var iterator = this.callbacks.entrySet().iterator(); iterator.hasNext(); ) {
-            val entry = iterator.next();
-            val queue = entry.getValue();
-
-            queue.removeIf(pair ->
-                    pair.left() > toExpiresAt(expiresIn)
-            );
+    public void cleanup() {
+        this.callbacks.forEach((key, queue) -> {
+            queue.removeIf(this::expired);
 
             if (queue.isEmpty()) {
-                iterator.remove();
+                this.callbacks.remove(key);
             }
-        }
+        });
     }
 
-    private static long toExpiresAt(long expiresIn) {
-        return nowEpochSecond() + expiresIn;
-    }
-
-    private static long nowEpochSecond() {
-        return ZonedDateTime.now(ZoneOffset.UTC).toEpochSecond();
+    private boolean expired(@NotNull Pair<Instant, ReceiveCallback> pair) {
+        return Instant.now().isAfter(pair.left());
     }
 
     public boolean isEmpty() {

@@ -23,13 +23,13 @@ package net.clydo.jedis.messaging.listener;
 import com.google.gson.Gson;
 import lombok.val;
 import net.clydo.jedis.messaging.JedisMessaging;
-import net.clydo.jedis.messaging.packet.Packet;
+import net.clydo.jedis.messaging.callback.SendCallback;import net.clydo.jedis.messaging.packet.Packet;
 import net.clydo.jedis.messaging.packet.PacketType;
-import redis.clients.jedis.JedisPubSub;
+import net.clydo.jedis.messaging.util.Multithreading;import redis.clients.jedis.JedisPubSub;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ConcurrentMap;import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ListenerHandler extends JedisPubSub {
     private final Gson gson;
@@ -57,7 +57,8 @@ public class ListenerHandler extends JedisPubSub {
 
         val packetType = PacketType.ofId(packet.type());
         val signature = packet.signature();
-        if (signature != null && Objects.equals(signature, this.messaging.getSignature())) {
+        val skipSelf = packet.skipSelf();
+        if (skipSelf && Objects.equals(signature, this.messaging.getSignature())) {
             return;
         }
 
@@ -74,10 +75,28 @@ public class ListenerHandler extends JedisPubSub {
                 //noinspection WhileLoopReplaceableByForEach
                 while (iterator.hasNext()) {
                     val listener = iterator.next();
-                    listener.call(channel, packetData, (callbackId != null ? this.messaging.callback(channel, callbackId, this.messaging.getSignature(), signature != null) : null));
+                    listener.call(channel, packetData, (callbackId != null ? this.callback(channel, callbackId, this.messaging.getSignature(), signature != null) : null));
                 }
             }
         }
+    }
+
+    public SendCallback callback(final String channel, final String callbackId, final String signature, final boolean skipSelf) {
+        val sent = new AtomicBoolean(false);
+
+        return (data) -> {
+            if (sent.get()) {
+                Multithreading.execute(() -> {
+                    if (!sent.get()) {
+                        val packet = new Packet<>(signature, PacketType.CALLBACK, channel, data, callbackId, skipSelf);
+                        this.messaging._publishPacket(channel, packet);
+
+                        sent.set(true);
+                    }
+                });
+            }
+            return sent.get();
+        };
     }
 
     public void register(String event, Listener listener) {

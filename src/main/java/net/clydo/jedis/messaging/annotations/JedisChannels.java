@@ -18,12 +18,18 @@
  * Copyright (C) 2024 ClydoNetwork
  */
 
-package net.clydo.jedis.messaging.callback;
+package net.clydo.jedis.messaging.annotations;
 
-import com.google.gson.JsonElement;
-import org.jetbrains.annotations.NotNull;
 
-@FunctionalInterface
-public interface SendCallback {
-    boolean call(@NotNull JsonElement json);
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+@Retention(RetentionPolicy.RUNTIME)
+@Target({ElementType.TYPE, ElementType.METHOD})
+public @interface JedisChannels {
+    String[] value();
+
+    boolean pattern() default false;
 }

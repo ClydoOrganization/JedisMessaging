@@ -27,11 +27,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 @Retention(RetentionPolicy.RUNTIME)
-@Target(ElementType.TYPE)
-public @interface JedisListener {
-    String event();
-
-    String[] channels();
-
-    boolean pattern() default false;
+@Target({ElementType.TYPE, ElementType.METHOD})
+public @interface JedisEvent {
+    String value();
 }
