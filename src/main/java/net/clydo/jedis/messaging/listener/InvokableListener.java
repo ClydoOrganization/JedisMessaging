@@ -20,8 +20,9 @@
 
 package net.clydo.jedis.messaging.listener;
 
-import com.google.gson.JsonElement;
 import net.clydo.jedis.messaging.callback.SendCallback;
+import net.clydo.jedis.messaging.packet.PacketData;
+import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -31,16 +32,19 @@ import java.lang.reflect.Method;
 public class InvokableListener implements Listener {
     private final Method method;
     private final Object instance;
+    private final Class<?> dataType;
 
-    public InvokableListener(final Method method, final Object instance) {
+    @Contract(pure = true)
+    public InvokableListener(final @NotNull Method method, final Object instance) {
         this.method = method;
         this.instance = instance;
+        this.dataType = method.getParameterTypes()[1];
     }
 
     @Override
-    public void call(@NotNull String channel, @NotNull JsonElement json, @Nullable SendCallback sender) {
+    public void call(@NotNull String channel, @NotNull PacketData data, @Nullable SendCallback sender) {
         try {
-            this.method.invoke(instance, channel, json, sender);
+            this.method.invoke(instance, channel, data.as(this.dataType), sender);
         } catch (IllegalAccessException | InvocationTargetException e) {
             throw new RuntimeException("Failed to invoke method " + method.getName(), e);
         }

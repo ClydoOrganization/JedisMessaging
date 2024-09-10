@@ -81,6 +81,10 @@ public class ReflectionUtil {
         }
 
         for (int i = 0; i < parameterTypes.length; i++) {
+            if (expectedTypes[i] == null) {
+                continue;
+            }
+
             if (!parameterTypes[i].equals(expectedTypes[i])) {
                 throw new IllegalArgumentException(
                         String.format(

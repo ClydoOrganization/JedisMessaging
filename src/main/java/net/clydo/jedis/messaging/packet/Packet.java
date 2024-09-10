@@ -20,23 +20,20 @@
 
 package net.clydo.jedis.messaging.packet;
 
+import com.google.gson.JsonElement;
 import org.jetbrains.annotations.NotNull;
 
-public record Packet<D>(
+public record Packet(
         String signature,
         int type,
         String event,
-        D data,
+        JsonElement data,
         String callbackId,
         boolean skipSelf
 ) {
     public static final PacketJsonTypeToken PACKET_JSON_TYPE_TOKEN = new PacketJsonTypeToken();
 
-    public Packet(final String signature, final @NotNull PacketType type, final String event, final D data, final String callbackId, final boolean skipSelf) {
+    public Packet(final String signature, final @NotNull PacketType type, final String event, final JsonElement data, final String callbackId, final boolean skipSelf) {
         this(signature, type.getId(), event, data, callbackId, skipSelf);
-    }
-
-    public Packet(final String signature, final @NotNull PacketType type, final D data, final String callbackId, final boolean skipSelf) {
-        this(signature, type.getId(), null, data, callbackId, skipSelf);
     }
 }

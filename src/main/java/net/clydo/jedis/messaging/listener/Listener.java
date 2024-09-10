@@ -20,12 +20,12 @@
 
 package net.clydo.jedis.messaging.listener;
 
-import com.google.gson.JsonElement;
 import net.clydo.jedis.messaging.callback.SendCallback;
+import net.clydo.jedis.messaging.packet.PacketData;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 @FunctionalInterface
 public interface Listener {
-    void call(@NotNull String channel, @NotNull JsonElement json, @Nullable SendCallback sender);
+    void call(@NotNull String channel, @NotNull PacketData data, @Nullable SendCallback sender);
 }

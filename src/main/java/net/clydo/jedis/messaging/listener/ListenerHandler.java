@@ -23,13 +23,17 @@ package net.clydo.jedis.messaging.listener;
 import com.google.gson.Gson;
 import lombok.val;
 import net.clydo.jedis.messaging.JedisMessaging;
-import net.clydo.jedis.messaging.callback.SendCallback;import net.clydo.jedis.messaging.packet.Packet;
+import net.clydo.jedis.messaging.callback.SendCallback;
+import net.clydo.jedis.messaging.packet.Packet;
+import net.clydo.jedis.messaging.packet.PacketData;
 import net.clydo.jedis.messaging.packet.PacketType;
-import net.clydo.jedis.messaging.util.Multithreading;import redis.clients.jedis.JedisPubSub;
+import net.clydo.jedis.messaging.util.Multithreading;
+import redis.clients.jedis.JedisPubSub;
+
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ConcurrentMap;import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ConcurrentMap;
 
 public class ListenerHandler extends JedisPubSub {
     private final Gson gson;
@@ -75,27 +79,23 @@ public class ListenerHandler extends JedisPubSub {
                 //noinspection WhileLoopReplaceableByForEach
                 while (iterator.hasNext()) {
                     val listener = iterator.next();
-                    listener.call(channel, packetData, (callbackId != null ? this.callback(channel, callbackId, this.messaging.getSignature(), signature != null) : null));
+                    listener.call(channel, new PacketData(packetData, this.gson), (callbackId != null ? this.callback(channel, callbackId, this.messaging.getSignature(), signature != null) : null));
                 }
             }
         }
     }
 
     public SendCallback callback(final String channel, final String callbackId, final String signature, final boolean skipSelf) {
-        val sent = new AtomicBoolean(false);
+        val sent = new boolean[]{false};
 
         return (data) -> {
-            if (sent.get()) {
+            if (!sent[0]) {
+                sent[0] = true;
                 Multithreading.execute(() -> {
-                    if (!sent.get()) {
-                        val packet = new Packet<>(signature, PacketType.CALLBACK, channel, data, callbackId, skipSelf);
-                        this.messaging._publishPacket(channel, packet);
-
-                        sent.set(true);
-                    }
+                    val packet = new Packet(signature, PacketType.CALLBACK, channel, this.gson.toJsonTree(data), callbackId, skipSelf);
+                    this.messaging._publishPacket(channel, packet);
                 });
             }
-            return sent.get();
         };
     }
 

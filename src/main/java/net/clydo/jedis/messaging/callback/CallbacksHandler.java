@@ -21,10 +21,10 @@
 package net.clydo.jedis.messaging.callback;
 
 import com.google.gson.Gson;
-import com.google.gson.JsonElement;
 import lombok.val;
 import net.clydo.jedis.messaging.JedisMessaging;
 import net.clydo.jedis.messaging.packet.Packet;
+import net.clydo.jedis.messaging.packet.PacketData;
 import net.clydo.jedis.messaging.packet.PacketType;
 import net.clydo.jedis.messaging.util.Pair;
 import org.jetbrains.annotations.NotNull;
@@ -67,16 +67,16 @@ public class CallbacksHandler extends JedisPubSub {
         if (packet.type() == PacketType.CALLBACK.getId()) {
             val callbackId = packet.callbackId();
             if (callbackId != null) {
-                this.processCallback(callbackId, channel, packet.data());
+                this.processCallback(callbackId, channel, new PacketData(packet.data(), this.gson));
             }
         }
     }
 
-    private boolean shouldSkipProcessing(@NotNull Packet<JsonElement> packet) {
+    private boolean shouldSkipProcessing(@NotNull Packet packet) {
         return packet.skipSelf() && Objects.equals(packet.signature(), this.messaging.getSignature());
     }
 
-    public void processCallback(final String callbackId, final String channel, final JsonElement data) {
+    public void processCallback(final String callbackId, final String channel, final PacketData data) {
         val callbacksQueue = this.callbacks.get(callbackId);
         if (callbacksQueue != null) {
             callbacksQueue.forEach(pair -> {

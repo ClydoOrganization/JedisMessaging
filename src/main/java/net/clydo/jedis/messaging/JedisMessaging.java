@@ -21,7 +21,6 @@
 package net.clydo.jedis.messaging;
 
 import com.google.gson.Gson;
-import com.google.gson.JsonElement;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.val;
@@ -128,7 +127,7 @@ public class JedisMessaging implements Closeable {
                 callbackId = this.putCallback(channel, receiveCallback);
             }
 
-            val packet = new Packet<>(this.signature, PacketType.EVENT, event, this.gson.toJsonTree(message), callbackId, skipSelf);
+            val packet = new Packet(this.signature, PacketType.EVENT, event, this.gson.toJsonTree(message), callbackId, skipSelf);
 
             this._publishPacket(channel, packet);
         });
@@ -204,7 +203,7 @@ public class JedisMessaging implements Closeable {
      * @param packet  the packet to be published
      * @return the number of clients that received the message, minus the sender
      */
-    public long _publishPacket(final String channel, final Packet<JsonElement> packet) {
+    public long _publishPacket(final String channel, final Packet packet) {
         val json = this.gson.toJson(packet);
         return this.messenger.publish(channel, json) - 1;
     }
@@ -248,11 +247,11 @@ public class JedisMessaging implements Closeable {
                 jedisChannels = annotation;
             }
 
-            val jedisEvent = ReflectionUtil.getAnnotation(methodClass, JedisEvent.class, true);
+            val jedisEvent = ReflectionUtil.getAnnotation(method, JedisEvent.class, true);
 
             if (jedisChannels != null && jedisEvent != null) {
                 try {
-                    val expectedTypes = new Class<?>[]{String.class, JsonElement.class, SendCallback.class};
+                    val expectedTypes = new Class<?>[]{String.class, null, SendCallback.class};
 
                     ReflectionUtil.validateMethodParameters(method, expectedTypes);
                 } catch (IllegalArgumentException e) {

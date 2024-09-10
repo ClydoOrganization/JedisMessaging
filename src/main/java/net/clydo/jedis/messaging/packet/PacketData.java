@@ -18,11 +18,31 @@
  * Copyright (C) 2024 ClydoNetwork
  */
 
-package net.clydo.jedis.messaging.callback;
+package net.clydo.jedis.messaging.packet;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 
-@FunctionalInterface
-public interface SendCallback {
-    void call(@NotNull Object data);
+@RequiredArgsConstructor
+public final class PacketData {
+    private final JsonElement data;
+    private final Gson gson;
+
+    public JsonElement raw() {
+        return this.data;
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T> T as(final @NotNull Class<T> clazz) {
+        if (PacketData.class.equals(clazz)) {
+            return (T) this;
+        }
+        return this.gson.fromJson(this.data, clazz);
+    }
+
+    public <T extends JsonElement> T cast(final @NotNull Class<T> clazz) {
+        return clazz.cast(this.data);
+    }
 }

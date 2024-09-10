@@ -20,10 +20,10 @@
 
 package net.clydo.jedis.messaging.callback;
 
-import com.google.gson.JsonElement;
+import net.clydo.jedis.messaging.packet.PacketData;
 import org.jetbrains.annotations.NotNull;
 
 @FunctionalInterface
 public interface ReceiveCallback {
-    void call(@NotNull String channel, JsonElement json);
+    void call(@NotNull String channel, PacketData data);
 }
