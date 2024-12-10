@@ -8,24 +8,32 @@
  *
  * JedisMessaging is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with JedisMessaging.  If not, see
+ * along with JedisMessaging. If not, see
  * <http://www.gnu.org/licenses/>.
  *
  * Copyright (C) 2024 ClydoNetwork
  */
 
-package net.clydo.jedis.messaging.listener;
+package net.clydo.jedis.messaging.bridge;
 
-import net.clydo.jedis.messaging.callback.SendCallback;
-import net.clydo.jedis.messaging.packet.PacketData;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import net.clydo.jedis.messaging.packet.Packet;
 
-@FunctionalInterface
-public interface Listener<D> {
-    void call(@NotNull String channel, @NotNull PacketData<D> data, @Nullable SendCallback sender);
+public interface DataBridge<D> {
+
+    //<T> T fromJson(JsonElement json, Class<T> classOfT)
+    <T> T dataAs(D data, Class<T> as);
+
+    //JsonElement toJsonTree(Object src);
+    D encodeData(Object src);
+
+    //String toJson(Packet src);
+    String encodePacket(Packet<D> src);
+
+    //<T> T fromJson(String json, Class<T> classOfT)
+    Packet<D> decodePacket(String data);
+
 }

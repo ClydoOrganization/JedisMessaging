@@ -20,9 +20,9 @@
 
 package net.clydo.jedis.messaging.listener;
 
-import com.google.gson.Gson;
 import lombok.val;
 import net.clydo.jedis.messaging.JedisMessaging;
+import net.clydo.jedis.messaging.bridge.DataBridge;
 import net.clydo.jedis.messaging.callback.SendCallback;
 import net.clydo.jedis.messaging.packet.Packet;
 import net.clydo.jedis.messaging.packet.PacketData;
@@ -35,15 +35,15 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
 
-public class ListenerHandler extends JedisPubSub {
-    private final Gson gson;
+public class ListenerHandler<D> extends JedisPubSub {
+    private final DataBridge<D> dataBridge;
     private final ConcurrentMap<String, ConcurrentLinkedQueue<Listener>> listeners;
-    private final JedisMessaging messaging;
+    private final JedisMessaging<D> messaging;
 
-    public ListenerHandler(JedisMessaging messaging, Gson gson) {
+    public ListenerHandler(JedisMessaging<D> messaging, DataBridge<D> dataBridge) {
         this.listeners = new ConcurrentHashMap<>();
         this.messaging = messaging;
-        this.gson = gson;
+        this.dataBridge = dataBridge;
     }
 
     @Override
@@ -57,7 +57,7 @@ public class ListenerHandler extends JedisPubSub {
     }
 
     private void onPacket(String channel, String message) {
-        val packet = this.gson.fromJson(message, Packet.PACKET_JSON_TYPE_TOKEN);
+        val packet = this.dataBridge.decodePacket(message);
 
         val packetType = PacketType.ofId(packet.type());
         val signature = packet.signature();
@@ -79,7 +79,7 @@ public class ListenerHandler extends JedisPubSub {
                 //noinspection WhileLoopReplaceableByForEach
                 while (iterator.hasNext()) {
                     val listener = iterator.next();
-                    listener.call(channel, new PacketData(packetData, this.gson), (callbackId != null ? this.callback(channel, callbackId, this.messaging.getSignature(), signature != null) : null));
+                    listener.call(channel, new PacketData<>(packetData, this.dataBridge), (callbackId != null ? this.callback(channel, callbackId, this.messaging.getSignature(), signature != null) : null));
                 }
             }
         }
@@ -92,7 +92,7 @@ public class ListenerHandler extends JedisPubSub {
             if (!sent[0]) {
                 sent[0] = true;
                 Multithreading.execute(() -> {
-                    val packet = new Packet(signature, PacketType.CALLBACK, channel, this.gson.toJsonTree(data), callbackId, skipSelf);
+                    val packet = new Packet<>(signature, PacketType.CALLBACK, channel, this.dataBridge.encodeData(data), callbackId, skipSelf);
                     this.messaging._publishPacket(channel, packet);
                 });
             }

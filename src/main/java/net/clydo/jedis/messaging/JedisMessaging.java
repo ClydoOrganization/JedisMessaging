@@ -20,12 +20,13 @@
 
 package net.clydo.jedis.messaging;
 
-import com.google.gson.Gson;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.val;
 import net.clydo.jedis.messaging.annotations.JedisChannels;
 import net.clydo.jedis.messaging.annotations.JedisEvent;
+import net.clydo.jedis.messaging.bridge.DataBridge;
+import net.clydo.jedis.messaging.bridge.JedisBridge;
 import net.clydo.jedis.messaging.callback.CallbacksHandler;
 import net.clydo.jedis.messaging.callback.ReceiveCallback;
 import net.clydo.jedis.messaging.callback.SendCallback;
@@ -39,7 +40,6 @@ import net.clydo.jedis.messaging.util.Multithreading;
 import net.clydo.jedis.messaging.util.ReflectionUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import redis.clients.jedis.Jedis;
 
 import java.io.Closeable;
 import java.lang.reflect.Method;
@@ -47,7 +47,6 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -56,13 +55,13 @@ import java.util.logging.Logger;
  * It provides mechanisms to publish and subscribe to messages, handle callbacks,
  * and manage listeners for specific events or patterns.
  */
-public class JedisMessaging implements Closeable {
+public class JedisMessaging<D> implements Closeable {
     private static final Logger LOGGER = Logger.getLogger(JedisMessaging.class.getName());
 
-    private final Gson gson;
+    private final DataBridge<D> dataBridge;
     private final JedisMessenger messenger;
-    private final Map<String, ListenerHandler> listenerHandlers;
-    private final Map<String, CallbacksHandler> callbacksHandlers;
+    private final Map<String, ListenerHandler<D>> listenerHandlers;
+    private final Map<String, CallbacksHandler<D>> callbacksHandlers;
     @Getter
     private final String signature; // Unique identifier for this instance of JedisMessaging.
     @Getter
@@ -71,27 +70,26 @@ public class JedisMessaging implements Closeable {
     private String defaultPublishChannel;
 
     /**
-     * Constructor that initializes the JedisMessaging instance with a JedisPool and Gson.
+     * Constructor that initializes the JedisMessaging instance.
      *
-     * @param jedisSupplier the Redis connection pool supplier
-     * @param gson          the Gson instance for JSON serialization/deserialization
+     * @param jedisBridge the Redis bridge
+     * @param dataBridge  dataBridge for serialization/deserialization
      */
-    public JedisMessaging(final Supplier<Jedis> jedisSupplier, final Gson gson) {
-        this(jedisSupplier, gson, 20);
+    public JedisMessaging(final JedisBridge jedisBridge, final DataBridge<D> dataBridge) {
+        this(jedisBridge, dataBridge, 20);
     }
 
     /**
-     * Constructor that initializes the JedisMessaging instance with specified callback expiration time,
-     * JedisPool, and Gson.
+     * Constructor that initializes the JedisMessaging instance with specified callback expiration time.
      *
-     * @param jedisSupplier      the Redis connection pool supplier
-     * @param gson               the Gson instance for JSON serialization/deserialization
+     * @param jedisBridge        the Redis bridge
+     * @param dataBridge         dataBridge for serialization/deserialization
      * @param callbacksExpiresIn time in seconds after which callbacks expire
      */
-    public JedisMessaging(final Supplier<Jedis> jedisSupplier, final Gson gson, final long callbacksExpiresIn) {
+    public JedisMessaging(final JedisBridge jedisBridge, final DataBridge<D> dataBridge, final long callbacksExpiresIn) {
         this.callbacksExpiresIn = callbacksExpiresIn;
-        this.gson = gson;
-        this.messenger = new JedisMessenger(jedisSupplier);
+        this.dataBridge = dataBridge;
+        this.messenger = new JedisMessenger(jedisBridge);
         this.listenerHandlers = new ConcurrentHashMap<>();
         this.callbacksHandlers = new ConcurrentHashMap<>();
         this.signature = UUID.randomUUID().toString();
@@ -126,7 +124,7 @@ public class JedisMessaging implements Closeable {
                 callbackId = this.putCallback(channel, receiveCallback);
             }
 
-            val packet = new Packet(this.signature, PacketType.EVENT, event, this.gson.toJsonTree(message), callbackId, skipSelf);
+            val packet = new Packet<>(this.signature, PacketType.EVENT, event, this.dataBridge.encodeData(message), callbackId, skipSelf);
 
             this._publishPacket(channel, packet);
         });
@@ -183,7 +181,7 @@ public class JedisMessaging implements Closeable {
 
         var handler = this.callbacksHandlers.get(channel);
         if (handler == null) {
-            handler = new CallbacksHandler(this, this.gson);
+            handler = new CallbacksHandler<>(this, this.dataBridge);
             this.callbacksHandlers.put(channel, handler);
 
             val finalHandler = handler;
@@ -202,8 +200,8 @@ public class JedisMessaging implements Closeable {
      * @param packet  the packet to be published
      * @return the number of clients that received the message, minus the sender
      */
-    public long _publishPacket(final String channel, final Packet packet) {
-        val json = this.gson.toJson(packet);
+    public long _publishPacket(final String channel, final Packet<D> packet) {
+        val json = this.dataBridge.encodePacket(packet);
         return this.messenger.publish(channel, json) - 1;
     }
 
@@ -262,7 +260,7 @@ public class JedisMessaging implements Closeable {
                 val event = jedisEvent.value();
                 val channels = jedisChannels.value();
 
-                val listener = new InvokableListener(method, listeners);
+                val listener = new InvokableListener<>(method, listeners);
                 if (pattern) {
                     this._subscribePattern(listener, event, channels);
                 } else {
@@ -287,7 +285,7 @@ public class JedisMessaging implements Closeable {
         for (String channel : channels) {
             var handler = this.listenerHandlers.get(channel);
             if (handler == null) {
-                handler = new ListenerHandler(this, this.gson);
+                handler = new ListenerHandler<>(this, this.dataBridge);
                 this.listenerHandlers.put(channel, handler);
 
                 val finalHandler = handler;
@@ -315,7 +313,7 @@ public class JedisMessaging implements Closeable {
         for (String pattern : patterns) {
             var handler = this.listenerHandlers.get(pattern);
             if (handler == null) {
-                handler = new ListenerHandler(this, this.gson);
+                handler = new ListenerHandler<>(this, this.dataBridge);
                 this.listenerHandlers.put(pattern, handler);
 
                 val finalHandler = handler;

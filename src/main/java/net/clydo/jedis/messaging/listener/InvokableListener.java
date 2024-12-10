@@ -29,7 +29,7 @@ import org.jetbrains.annotations.Nullable;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
-public class InvokableListener implements Listener {
+public class InvokableListener<D> implements Listener<D> {
     private final Method method;
     private final Object instance;
     private final Class<?> dataType;
@@ -44,7 +44,7 @@ public class InvokableListener implements Listener {
     }
 
     @Override
-    public void call(@NotNull String channel, @NotNull PacketData data, @Nullable SendCallback sender) {
+    public void call(@NotNull String channel, @NotNull PacketData<D> data, @Nullable SendCallback sender) {
         try {
             this.method.invoke(instance, channel, data.as(this.dataType), sender);
         } catch (IllegalAccessException | InvocationTargetException e) {

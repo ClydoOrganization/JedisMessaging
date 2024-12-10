@@ -20,23 +20,27 @@
 
 package net.clydo.jedis.messaging.util;
 
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import lombok.Getter;
 import lombok.experimental.UtilityClass;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 @UtilityClass
 public class Multithreading {
     private static final Logger LOGGER = Logger.getLogger(Multithreading.class.getName());
-    private static final ThreadFactory THREAD_FACTORY = new ThreadFactoryBuilder().setNameFormat("JedisMessaging").build();
+
+    private static final ThreadFactory THREAD_FACTORY = new CustomThreadFactory("JedisMessaging");
     @Getter
     private final ExecutorService POOL = Executors.newCachedThreadPool(THREAD_FACTORY);
     @Getter
-    private final ScheduledExecutorService SCHEDULED_POOL = Executors.newScheduledThreadPool(Runtime.getRuntime().availableProcessors() + 1);
+    private final ScheduledExecutorService SCHEDULED_POOL = Executors.newScheduledThreadPool(
+            Runtime.getRuntime().availableProcessors() + 1,
+            THREAD_FACTORY
+    );
 
     public void execute(Runnable task) {
         POOL.execute(() -> {
@@ -55,6 +59,7 @@ public class Multithreading {
 
     public static void shutdownExecutors() {
         shutdownExecutor(POOL);
+        shutdownExecutor(SCHEDULED_POOL);
     }
 
     public static void shutdownExecutor(@NotNull ExecutorService service) {
@@ -69,6 +74,23 @@ public class Multithreading {
 
         if (!flag) {
             service.shutdownNow();
+        }
+    }
+
+    private static class CustomThreadFactory implements ThreadFactory {
+        private final AtomicInteger threadNumber = new AtomicInteger(1);
+        private final String namePrefix;
+
+        CustomThreadFactory(String namePrefix) {
+            this.namePrefix = namePrefix;
+        }
+
+        @Override
+        public Thread newThread(@NotNull Runnable r) {
+            Thread thread = new Thread(r, this.namePrefix + "-thread-" + this.threadNumber.getAndIncrement());
+            thread.setDaemon(false);
+            thread.setPriority(Thread.NORM_PRIORITY);
+            return thread;
         }
     }
 }

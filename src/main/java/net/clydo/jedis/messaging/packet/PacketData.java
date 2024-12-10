@@ -20,17 +20,16 @@
 
 package net.clydo.jedis.messaging.packet;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonElement;
 import lombok.RequiredArgsConstructor;
+import net.clydo.jedis.messaging.bridge.DataBridge;
 import org.jetbrains.annotations.NotNull;
 
 @RequiredArgsConstructor
-public final class PacketData {
-    private final JsonElement data;
-    private final Gson gson;
+public final class PacketData<D> {
+    private final D data;
+    private final DataBridge<D> dataBridge;
 
-    public JsonElement raw() {
+    public D raw() {
         return this.data;
     }
 
@@ -39,10 +38,10 @@ public final class PacketData {
         if (PacketData.class.equals(clazz)) {
             return (T) this;
         }
-        return this.gson.fromJson(this.data, clazz);
+        return this.dataBridge.dataAs(this.data, clazz);
     }
 
-    public <T extends JsonElement> T cast(final @NotNull Class<T> clazz) {
+    public <T> T cast(final @NotNull Class<T> clazz) {
         return clazz.cast(this.data);
     }
 }

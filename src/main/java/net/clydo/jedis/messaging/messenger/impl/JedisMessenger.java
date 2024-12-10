@@ -20,38 +20,35 @@
 
 package net.clydo.jedis.messaging.messenger.impl;
 
-import lombok.val;
 import net.clydo.jedis.messaging.messenger.IJedisMessenger;
-import redis.clients.jedis.Jedis;
+import net.clydo.jedis.messaging.bridge.JedisBridge;
 import redis.clients.jedis.JedisPubSub;
 
-import java.util.function.Supplier;
-
 public class JedisMessenger implements IJedisMessenger {
-    private final Supplier<Jedis> jedisSupplier;
+    private final JedisBridge jedisBridge;
 
-    public JedisMessenger(final Supplier<Jedis> jedisSupplier) {
-        this.jedisSupplier = jedisSupplier;
+    public JedisMessenger(final JedisBridge jedisBridge) {
+        this.jedisBridge = jedisBridge;
     }
 
     @Override
     public long publish(String channel, String message) {
-        try (val jedis = this.jedisSupplier.get()) {
+        return this.jedisBridge.bridge(jedis -> {
             return jedis.publish(channel, message);
-        }
+        });
     }
 
     @Override
     public void subscribe(JedisPubSub jedisPubSub, String... channels) {
-        try (val jedis = this.jedisSupplier.get()) {
+        this.jedisBridge.bridge(jedis -> {
             jedis.subscribe(jedisPubSub, channels);
-        }
+        });
     }
 
     @Override
     public void subscribePattern(JedisPubSub jedisPubSub, String... patterns) {
-        try (val jedis = this.jedisSupplier.get()) {
+        this.jedisBridge.bridge(jedis -> {
             jedis.psubscribe(jedisPubSub, patterns);
-        }
+        });
     }
 }

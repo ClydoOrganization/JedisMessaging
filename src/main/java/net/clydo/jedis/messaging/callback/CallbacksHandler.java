@@ -20,9 +20,9 @@
 
 package net.clydo.jedis.messaging.callback;
 
-import com.google.gson.Gson;
 import lombok.val;
 import net.clydo.jedis.messaging.JedisMessaging;
+import net.clydo.jedis.messaging.bridge.DataBridge;
 import net.clydo.jedis.messaging.packet.Packet;
 import net.clydo.jedis.messaging.packet.PacketData;
 import net.clydo.jedis.messaging.packet.PacketType;
@@ -36,14 +36,14 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
 
-public class CallbacksHandler extends JedisPubSub {
-    private final Gson gson;
-    private final JedisMessaging messaging;
+public class CallbacksHandler<D> extends JedisPubSub {
+    private final DataBridge<D> dataBridge;
+    private final JedisMessaging<D> messaging;
     private final ConcurrentMap<String, ConcurrentLinkedQueue<Pair<Instant, ReceiveCallback>>> callbacks;
 
-    public CallbacksHandler(JedisMessaging messaging, Gson gson) {
+    public CallbacksHandler(JedisMessaging<D> messaging, DataBridge<D> dataBridge) {
         this.messaging = messaging;
-        this.gson = gson;
+        this.dataBridge = dataBridge;
         this.callbacks = new ConcurrentHashMap<>();
     }
 
@@ -58,7 +58,7 @@ public class CallbacksHandler extends JedisPubSub {
     }
 
     private void onPacket(String channel, String message) {
-        val packet = this.gson.fromJson(message, Packet.PACKET_JSON_TYPE_TOKEN);
+        val packet = this.dataBridge.decodePacket(message);
 
         if (this.shouldSkipProcessing(packet)) {
             return;
@@ -67,16 +67,16 @@ public class CallbacksHandler extends JedisPubSub {
         if (packet.type() == PacketType.CALLBACK.getId()) {
             val callbackId = packet.callbackId();
             if (callbackId != null) {
-                this.processCallback(callbackId, channel, new PacketData(packet.data(), this.gson));
+                this.processCallback(callbackId, channel, new PacketData<>(packet.data(), this.dataBridge));
             }
         }
     }
 
-    private boolean shouldSkipProcessing(@NotNull Packet packet) {
+    private boolean shouldSkipProcessing(@NotNull Packet<D> packet) {
         return packet.skipSelf() && Objects.equals(packet.signature(), this.messaging.getSignature());
     }
 
-    public void processCallback(final String callbackId, final String channel, final PacketData data) {
+    public void processCallback(final String callbackId, final String channel, final PacketData<D> data) {
         val callbacksQueue = this.callbacks.get(callbackId);
         if (callbacksQueue != null) {
             callbacksQueue.forEach(pair -> {
