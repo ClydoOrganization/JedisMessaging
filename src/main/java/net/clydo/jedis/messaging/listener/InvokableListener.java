@@ -36,6 +36,8 @@ public class InvokableListener implements Listener {
 
     @Contract(pure = true)
     public InvokableListener(final @NotNull Method method, final Object instance) {
+        method.setAccessible(true);
+
         this.method = method;
         this.instance = instance;
         this.dataType = method.getParameterTypes()[1];

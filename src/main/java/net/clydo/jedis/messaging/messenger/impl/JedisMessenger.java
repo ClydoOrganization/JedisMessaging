@@ -22,33 +22,35 @@ package net.clydo.jedis.messaging.messenger.impl;
 
 import lombok.val;
 import net.clydo.jedis.messaging.messenger.IJedisMessenger;
-import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPubSub;
 
-public class JedisMessenger implements IJedisMessenger {
-    private final JedisPool jedisPool;
+import java.util.function.Supplier;
 
-    public JedisMessenger(final JedisPool jedisPool) {
-        this.jedisPool = jedisPool;
+public class JedisMessenger implements IJedisMessenger {
+    private final Supplier<Jedis> jedisSupplier;
+
+    public JedisMessenger(final Supplier<Jedis> jedisSupplier) {
+        this.jedisSupplier = jedisSupplier;
     }
 
     @Override
     public long publish(String channel, String message) {
-        try (val jedis = this.jedisPool.getResource()) {
+        try (val jedis = this.jedisSupplier.get()) {
             return jedis.publish(channel, message);
         }
     }
 
     @Override
     public void subscribe(JedisPubSub jedisPubSub, String... channels) {
-        try (val jedis = this.jedisPool.getResource()) {
+        try (val jedis = this.jedisSupplier.get()) {
             jedis.subscribe(jedisPubSub, channels);
         }
     }
 
     @Override
     public void subscribePattern(JedisPubSub jedisPubSub, String... patterns) {
-        try (val jedis = this.jedisPool.getResource()) {
+        try (val jedis = this.jedisSupplier.get()) {
             jedis.psubscribe(jedisPubSub, patterns);
         }
     }

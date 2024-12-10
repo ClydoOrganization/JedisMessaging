@@ -39,7 +39,7 @@ import net.clydo.jedis.messaging.util.Multithreading;
 import net.clydo.jedis.messaging.util.ReflectionUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.Jedis;
 
 import java.io.Closeable;
 import java.lang.reflect.Method;
@@ -47,6 +47,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -59,7 +60,6 @@ public class JedisMessaging implements Closeable {
     private static final Logger LOGGER = Logger.getLogger(JedisMessaging.class.getName());
 
     private final Gson gson;
-    private final JedisPool jedisPool;
     private final JedisMessenger messenger;
     private final Map<String, ListenerHandler> listenerHandlers;
     private final Map<String, CallbacksHandler> callbacksHandlers;
@@ -73,26 +73,25 @@ public class JedisMessaging implements Closeable {
     /**
      * Constructor that initializes the JedisMessaging instance with a JedisPool and Gson.
      *
-     * @param jedisPool the Redis connection pool
-     * @param gson      the Gson instance for JSON serialization/deserialization
+     * @param jedisSupplier the Redis connection pool supplier
+     * @param gson          the Gson instance for JSON serialization/deserialization
      */
-    public JedisMessaging(final JedisPool jedisPool, final Gson gson) {
-        this(jedisPool, gson, 20);
+    public JedisMessaging(final Supplier<Jedis> jedisSupplier, final Gson gson) {
+        this(jedisSupplier, gson, 20);
     }
 
     /**
      * Constructor that initializes the JedisMessaging instance with specified callback expiration time,
      * JedisPool, and Gson.
      *
-     * @param jedisPool          the Redis connection pool
+     * @param jedisSupplier      the Redis connection pool supplier
      * @param gson               the Gson instance for JSON serialization/deserialization
      * @param callbacksExpiresIn time in seconds after which callbacks expire
      */
-    public JedisMessaging(final JedisPool jedisPool, final Gson gson, final long callbacksExpiresIn) {
+    public JedisMessaging(final Supplier<Jedis> jedisSupplier, final Gson gson, final long callbacksExpiresIn) {
         this.callbacksExpiresIn = callbacksExpiresIn;
-        this.jedisPool = jedisPool;
         this.gson = gson;
-        this.messenger = new JedisMessenger(jedisPool);
+        this.messenger = new JedisMessenger(jedisSupplier);
         this.listenerHandlers = new ConcurrentHashMap<>();
         this.callbacksHandlers = new ConcurrentHashMap<>();
         this.signature = UUID.randomUUID().toString();
@@ -263,7 +262,6 @@ public class JedisMessaging implements Closeable {
                 val event = jedisEvent.value();
                 val channels = jedisChannels.value();
 
-                method.setAccessible(true);
                 val listener = new InvokableListener(method, listeners);
                 if (pattern) {
                     this._subscribePattern(listener, event, channels);
@@ -336,7 +334,5 @@ public class JedisMessaging implements Closeable {
     @Override
     public void close() {
         Multithreading.shutdownExecutors();
-
-        this.jedisPool.close();
     }
 }
