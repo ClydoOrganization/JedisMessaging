@@ -88,7 +88,7 @@ public class Multithreading {
         @Override
         public Thread newThread(@NotNull Runnable r) {
             Thread thread = new Thread(r, this.namePrefix + "-thread-" + this.threadNumber.getAndIncrement());
-            thread.setDaemon(false);
+            thread.setDaemon(true);
             thread.setPriority(Thread.NORM_PRIORITY);
             return thread;
         }

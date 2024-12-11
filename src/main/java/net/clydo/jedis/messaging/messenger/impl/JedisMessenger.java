@@ -20,9 +20,13 @@
 
 package net.clydo.jedis.messaging.messenger.impl;
 
-import net.clydo.jedis.messaging.messenger.IJedisMessenger;
+import lombok.val;
 import net.clydo.jedis.messaging.bridge.JedisBridge;
+import net.clydo.jedis.messaging.messenger.IJedisMessenger;
 import redis.clients.jedis.JedisPubSub;
+import redis.clients.jedis.exceptions.JedisConnectionException;
+
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class JedisMessenger implements IJedisMessenger {
     private final JedisBridge jedisBridge;
@@ -40,15 +44,48 @@ public class JedisMessenger implements IJedisMessenger {
 
     @Override
     public void subscribe(JedisPubSub jedisPubSub, String... channels) {
-        this.jedisBridge.bridge(jedis -> {
-            jedis.subscribe(jedisPubSub, channels);
-        });
+        val retryAttempts = new AtomicInteger(0);
+
+        while (true) {
+            this.jedisBridge.bridge(jedis -> {
+                try {
+                    jedis.subscribe(jedisPubSub, channels);
+                    retryAttempts.set(0);
+                } catch (JedisConnectionException e) {
+                    val attempts = retryAttempts.incrementAndGet();
+                    val backoffTime = Math.min(1000 * attempts, 30000);
+
+                    try {
+                        Thread.sleep(backoffTime);
+                    } catch (InterruptedException interruptedException) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+            });
+        }
     }
 
     @Override
     public void subscribePattern(JedisPubSub jedisPubSub, String... patterns) {
-        this.jedisBridge.bridge(jedis -> {
-            jedis.psubscribe(jedisPubSub, patterns);
-        });
+        val retryAttempts = new AtomicInteger(0);
+
+        while (true) {
+            this.jedisBridge.bridge(jedis -> {
+                try {
+                    jedis.psubscribe(jedisPubSub, patterns);
+                    retryAttempts.set(0);
+                } catch (JedisConnectionException e) {
+                    val attempts = retryAttempts.incrementAndGet();
+                    val backoffTime = Math.min(1000 * attempts, 30000);
+
+                    try {
+                        Thread.sleep(backoffTime);
+                    } catch (InterruptedException interruptedException) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+            });
+        }
     }
+
 }

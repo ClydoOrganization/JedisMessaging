@@ -20,10 +20,13 @@
 
 package net.clydo.jedis.messaging.bridge;
 
+import org.jetbrains.annotations.Contract;
+import org.jetbrains.annotations.NotNull;
 import redis.clients.jedis.Jedis;
 
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 @FunctionalInterface
 public interface JedisBridge {
@@ -35,6 +38,18 @@ public interface JedisBridge {
             consumer.accept(jedis);
             return null;
         });
+    }
+
+    @Contract(value = "_ -> new", pure = true)
+    static @NotNull JedisBridge create(Supplier<Jedis> jedisSupplier) {
+        return new JedisBridge() {
+            @Override
+            public <T> T bridge(Function<Jedis, T> function) {
+                try (Jedis jedis = jedisSupplier.get()) {
+                    return function.apply(jedis);
+                }
+            }
+        };
     }
 
 }

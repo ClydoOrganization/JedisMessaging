@@ -20,8 +20,9 @@
 
 package net.clydo.jedis.messaging.bridge.gson;
 
+import com.google.gson.JsonElement;
 import com.google.gson.reflect.TypeToken;
 import net.clydo.jedis.messaging.packet.Packet;
 
-public class PacketTypeToken<D> extends TypeToken<Packet<D>> {
+public class GsonPacketTypeToken extends TypeToken<Packet<JsonElement>> {
 }

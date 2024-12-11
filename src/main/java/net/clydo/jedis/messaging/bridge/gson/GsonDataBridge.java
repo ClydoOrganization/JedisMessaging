@@ -29,7 +29,7 @@ import net.clydo.jedis.messaging.packet.Packet;
 @RequiredArgsConstructor
 public class GsonDataBridge implements DataBridge<JsonElement> {
 
-    private static final PacketTypeToken<JsonElement> PACKET_TYPE_TOKEN = new PacketTypeToken<>();
+    private static final GsonPacketTypeToken PACKET_TYPE_TOKEN = new GsonPacketTypeToken();
 
     private final Gson gson;
 

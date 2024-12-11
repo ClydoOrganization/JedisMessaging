@@ -210,7 +210,7 @@ public class JedisMessaging<D> implements Closeable {
      *
      * @param listener the listeners to subscribe
      */
-    public void subscribe(final @NotNull Listener listener) {
+    public void subscribe(final @NotNull Listener<D> listener) {
         val clazz = listener.getClass();
         val jedisChannels = ReflectionUtil.validateAnnotation(clazz, JedisChannels.class);
         val jedisEvent = ReflectionUtil.validateAnnotation(clazz, JedisEvent.class);
@@ -260,7 +260,7 @@ public class JedisMessaging<D> implements Closeable {
                 val event = jedisEvent.value();
                 val channels = jedisChannels.value();
 
-                val listener = new InvokableListener<>(method, listeners);
+                val listener = new InvokableListener<D>(method, listeners);
                 if (pattern) {
                     this._subscribePattern(listener, event, channels);
                 } else {
@@ -277,7 +277,7 @@ public class JedisMessaging<D> implements Closeable {
      * @param event    the event type to listen for (can be null)
      * @param channels the channels to subscribe to
      */
-    private void _subscribeChannel(final Listener listener, @Nullable final String event, final String... channels) {
+    private void _subscribeChannel(final Listener<D> listener, @Nullable final String event, final String... channels) {
         if (channels == null) {
             throw new IllegalStateException("Cannot subscribe without a channel");
         }

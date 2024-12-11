@@ -37,7 +37,7 @@ import java.util.concurrent.ConcurrentMap;
 
 public class ListenerHandler<D> extends JedisPubSub {
     private final DataBridge<D> dataBridge;
-    private final ConcurrentMap<String, ConcurrentLinkedQueue<Listener>> listeners;
+    private final ConcurrentMap<String, ConcurrentLinkedQueue<Listener<D>>> listeners;
     private final JedisMessaging<D> messaging;
 
     public ListenerHandler(JedisMessaging<D> messaging, DataBridge<D> dataBridge) {
@@ -99,7 +99,7 @@ public class ListenerHandler<D> extends JedisPubSub {
         };
     }
 
-    public void register(String event, Listener listener) {
+    public void register(String event, Listener<D> listener) {
         var listeners = this.listeners.get(event);
         if (listeners == null) {
             listeners = new ConcurrentLinkedQueue<>();
